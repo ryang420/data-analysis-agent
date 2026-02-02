@@ -1,0 +1,35 @@
+# 仅列出直接依赖，间接依赖由 pip 自动安装
+# 使用 >= 便于获得安全与兼容更新；若需严格复现，可用 pip-compile 生成 requirements.lock
+
+# Web
+fastapi>=0.121.2
+uvicorn>=0.38.0
+
+# LLM / Agent
+langchain>=1.0.3
+langchain-openai>=1.0.1
+langgraph>=1.0.2
+langgraph-checkpoint-postgres>=3.0.1
+openai>=2.15.0
+
+# 数据库
+SQLAlchemy>=2.0.44
+psycopg>=3.3.0
+psycopg-binary>=3.3.0
+psycopg-pool>=3.3.0
+psycopg2-binary>=2.9.9
+alembic>=1.16.5
+
+# 存储
+boto3>=1.40.61
+
+# 工具与数据
+pydantic>=2.12.3
+requests>=2.32.5
+chardet>=5.2.0
+python-dotenv>=1.2.1
+pandas>=2.2.2
+openpyxl>=3.1.5
+python-pptx>=1.0.2
+pypdf>=6.4.1
+docx2python>=3.5.0

@@ -1,0 +1,7 @@
+[MASTER]
+# 让 Pylint 能解析 scripts/ 里对 src 下包（如 storage）的 import
+init-hook='import sys, os; sys.path.insert(0, os.path.join(os.getcwd(), "src"))'
+
+[MESSAGES CONTROL]
+# 禁用 logging-fstring-interpolation：允许在 logging 中使用 f-string
+disable=logging-fstring-interpolation
