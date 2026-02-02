@@ -80,7 +80,7 @@ bash backend/scripts/http_run.sh
 # 2. 启动前端
 cd frontend && npm install && npm run dev
 ```
-前端默认在 http://localhost:5173，通过 Vite 代理访问后端 http://localhost:8000。
+前端默认在 [http://localhost:5173](http://localhost:5173)，通过 Vite 代理访问后端 [http://localhost:8000](http://localhost:8000)。
 
 **遇到 500 错误时**：查看后端终端日志获取详细堆栈；前端会显示错误信息。常见原因：`PGDATABASE_URL` 或 `OPENAI_API_KEY` 未配置、数据库连接失败。
 
