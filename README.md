@@ -94,3 +94,8 @@ cd frontend && npm install && npm run dev
 | `PROJECT_ROOT` | 可选，指向 backend 目录，不设则脚本自动推断 |
 
 详见 `.env.example`。
+
+## 云端部署平台：
+- 前端：Cloudflare Pages
+- 后端：Fly.io (Docker)
+- 数据库：Supabase
