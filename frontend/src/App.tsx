@@ -3,10 +3,18 @@ import './App.css'
 
 const API_BASE = import.meta.env.VITE_API_BASE || ''
 
+interface ToolCall {
+  id: string
+  name: string
+  args: string
+  result?: string
+}
+
 interface Message {
   id: string
   role: 'user' | 'assistant'
   content: string
+  toolCalls?: ToolCall[]
 }
 
 function MarkdownContent({ text }: { text: string }) {
@@ -55,6 +63,71 @@ function MarkdownContent({ text }: { text: string }) {
     )
   }
   return <div className="message-content-inner">{elements}</div>
+}
+
+function CollapsibleToolBlock({ tool }: { tool: ToolCall }) {
+  const [collapsed, setCollapsed] = useState(true)
+  let sql = ''
+  let resultPreview = ''
+  try {
+    const args = JSON.parse(tool.args || '{}')
+    sql = args.sql || ''
+  } catch {
+    sql = tool.args || ''
+  }
+  if (tool.result) {
+    try {
+      const parsed = JSON.parse(tool.result)
+      if (parsed.columns && parsed.data) {
+        resultPreview = `columns: ${parsed.columns.join(', ')} | rows: ${parsed.row_count ?? parsed.data?.length ?? 0}`
+      } else {
+        resultPreview = String(tool.result).slice(0, 80) + (tool.result.length > 80 ? '...' : '')
+      }
+    } catch {
+      resultPreview = String(tool.result).slice(0, 80) + (tool.result.length > 80 ? '...' : '')
+    }
+  }
+
+  const isSqlTool = tool.name === 'execute_sql_query' || tool.name === 'get_table_schema'
+
+  return (
+    <div className="tool-block">
+      <button
+        type="button"
+        className="tool-block-header"
+        onClick={() => setCollapsed((c) => !c)}
+        aria-expanded={!collapsed}
+      >
+        <span className="tool-block-icon">🔧</span>
+        <span className="tool-block-name">{tool.name}</span>
+        <span className="tool-block-chevron">{collapsed ? '▶' : '▼'}</span>
+      </button>
+      {!collapsed && (
+        <div className="tool-block-body">
+          {isSqlTool && sql && (
+            <div className="tool-block-section">
+              <div className="tool-block-label">SQL</div>
+              <pre className="tool-block-sql">
+                <code>{sql}</code>
+              </pre>
+            </div>
+          )}
+          {tool.result && (
+            <div className="tool-block-section">
+              <div className="tool-block-label">执行结果</div>
+              <pre className="tool-block-result">
+                <code>{tool.result}</code>
+              </pre>
+            </div>
+          )}
+          {!tool.result && <div className="tool-block-placeholder">执行中...</div>}
+        </div>
+      )}
+      {collapsed && resultPreview && (
+        <div className="tool-block-preview">{resultPreview}</div>
+      )}
+    </div>
+  )
 }
 
 function App() {
@@ -122,6 +195,18 @@ function App() {
       const decoder = new TextDecoder()
       let buffer = ''
       let fullContent = ''
+      const toolCallsAcc: Record<number, { id: string; name: string; args: string }> = {}
+      const toolResults: Record<string, string> = {}
+
+      const mergeToolCalls = () =>
+        Object.values(toolCallsAcc)
+          .sort((a, b) => (a.id < b.id ? -1 : 1))
+          .map((tc) => ({
+            id: tc.id,
+            name: tc.name,
+            args: tc.args,
+            result: toolResults[tc.id],
+          }))
 
       if (reader) {
         while (true) {
@@ -136,15 +221,31 @@ function App() {
               if (data === '[DONE]') continue
               try {
                 const obj = JSON.parse(data)
-                const delta = obj.choices?.[0]?.delta?.content
-                if (delta) {
-                  fullContent += delta
-                  setMessages((prev) =>
-                    prev.map((m) =>
-                      m.id === assistantId ? { ...m, content: fullContent } : m
-                    )
-                  )
+                const delta = obj.choices?.[0]?.delta
+                if (!delta) continue
+
+                if (delta.tool_calls) {
+                  for (const tc of delta.tool_calls) {
+                    const idx = tc.index ?? 0
+                    if (!toolCallsAcc[idx]) toolCallsAcc[idx] = { id: '', name: '', args: '' }
+                    if (tc.id) toolCallsAcc[idx].id += tc.id
+                    if (tc.function?.name) toolCallsAcc[idx].name += tc.function.name
+                    if (tc.function?.arguments) toolCallsAcc[idx].args += tc.function.arguments
+                  }
                 }
+                if (delta.role === 'tool' && delta.tool_call_id != null && delta.content != null) {
+                  toolResults[delta.tool_call_id] = (toolResults[delta.tool_call_id] || '') + delta.content
+                } else if (delta.content) {
+                  // Only assistant text content goes to message-content-inner; tool results stay in tool-blocks
+                  fullContent += delta.content
+                }
+
+                const tools = Object.keys(toolCallsAcc).length > 0 ? mergeToolCalls() : undefined
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId ? { ...m, content: fullContent, toolCalls: tools } : m
+                  )
+                )
               } catch {
                 // ignore parse errors
               }
@@ -202,15 +303,26 @@ function App() {
             <div className="message-content">
               {m.role === 'user' ? (
                 m.content
-              ) : m.content ? (
-                <MarkdownContent text={m.content} />
-              ) : loading ? (
+              ) : (
                 <>
-                  <span className="loading-dot" />
-                  <span className="loading-dot" />
-                  <span className="loading-dot" />
+                  {m.role === 'assistant' && m.toolCalls && m.toolCalls.length > 0 && (
+                    <div className="tool-blocks">
+                      {m.toolCalls.map((tc, i) => (
+                        <CollapsibleToolBlock key={tc.id || `tc-${i}`} tool={tc} />
+                      ))}
+                    </div>
+                  )}
+                  {m.content ? (
+                    <MarkdownContent text={m.content} />
+                  ) : loading ? (
+                    <>
+                      <span className="loading-dot" />
+                      <span className="loading-dot" />
+                      <span className="loading-dot" />
+                    </>
+                  ) : null}
                 </>
-              ) : null}
+              )}
             </div>
           </div>
         ))}
