@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import './App.css'
 
 const API_BASE = import.meta.env.VITE_API_BASE || ''
@@ -17,52 +19,27 @@ interface Message {
   toolCalls?: ToolCall[]
 }
 
-function MarkdownContent({ text }: { text: string }) {
-  const lines = text.split('\n')
-  const elements: React.ReactNode[] = []
-  let inCodeBlock = false
-  let codeBuffer: string[] = []
-  let key = 0
+/** Strip outer ```markdown ... ``` wrapper so inner markdown can be rendered */
+function stripOuterMarkdownCodeBlock(text: string): string {
+  const trimmed = text.trim()
+  if (!trimmed.startsWith('```')) return text
+  const afterOpen = trimmed.slice(3).trimStart()
+  const langMatch = afterOpen.match(/^(\w+)\s*\n/)
+  const contentStart = langMatch ? langMatch[0].length : 0
+  const inner = afterOpen.slice(contentStart)
+  const closeIdx = inner.indexOf('\n```')
+  if (closeIdx >= 0) return inner.slice(0, closeIdx).trimEnd()
+  if (inner.endsWith('```')) return inner.slice(0, -3).trimEnd()
+  return text
+}
 
-  for (const line of lines) {
-    if (line.startsWith('```')) {
-      if (inCodeBlock) {
-        elements.push(
-          <pre key={key++}>
-            <code>{codeBuffer.join('\n')}</code>
-          </pre>
-        )
-        codeBuffer = []
-      }
-      inCodeBlock = !inCodeBlock
-      continue
-    }
-    if (inCodeBlock) {
-      codeBuffer.push(line)
-      continue
-    }
-    if (line.startsWith('### ')) {
-      elements.push(<h4 key={key++}>{line.slice(4)}</h4>)
-    } else if (line.startsWith('## ')) {
-      elements.push(<h3 key={key++}>{line.slice(3)}</h3>)
-    } else if (line.startsWith('# ')) {
-      elements.push(<h2 key={key++}>{line.slice(2)}</h2>)
-    } else if (line.startsWith('- ') || line.startsWith('* ')) {
-      elements.push(<p key={key++}>• {line.slice(2)}</p>)
-    } else if (line.trim()) {
-      elements.push(<p key={key++}>{line}</p>)
-    } else {
-      elements.push(<br key={key++} />)
-    }
-  }
-  if (codeBuffer.length > 0) {
-    elements.push(
-      <pre key={key++}>
-        <code>{codeBuffer.join('\n')}</code>
-      </pre>
-    )
-  }
-  return <div className="message-content-inner">{elements}</div>
+function MarkdownContent({ text }: { text: string }) {
+  const content = stripOuterMarkdownCodeBlock(text)
+  return (
+    <div className="message-content-inner">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+    </div>
+  )
 }
 
 function CollapsibleToolBlock({ tool }: { tool: ToolCall }) {
