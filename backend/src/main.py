@@ -10,7 +10,7 @@ import contextvars
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, END
 from langgraph.graph.state import CompiledStateGraph
@@ -661,7 +661,6 @@ async def openai_chat_completions(request: Request):
     except Exception as e:
         logger.error(f"Unexpected error in openai_chat_completions: {e}", exc_info=True)
         err = service.error_classifier.classify(e, {"node_name": "openai_chat_completions"})
-        from fastapi.responses import JSONResponse
         return JSONResponse(
             status_code=500,
             content={

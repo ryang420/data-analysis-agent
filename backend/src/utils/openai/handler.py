@@ -1,6 +1,7 @@
 """OpenAI Chat Completions 处理器"""
 
 import asyncio
+import json
 import logging
 import threading
 import contextvars
@@ -13,6 +14,8 @@ from utils.openai.types.response import OpenAIError, OpenAIErrorResponse
 from utils.openai.converter.request_converter import RequestConverter
 from utils.openai.converter.response_converter import ResponseConverter
 from utils.error.classifier import classify_error
+from utils.helper import graph_helper
+from utils.log.loop_trace import init_agent_config, init_run_config
 
 logger = logging.getLogger(__name__)
 
@@ -114,14 +117,11 @@ class OpenAIChatHandler:
                 """后台线程生产者"""
                 try:
                     # 获取 graph 并配置
-                    from utils.helper import graph_helper
                     graph = self.graph_service._get_graph(ctx)
 
                     if graph_helper.is_agent_proj():
-                        from utils.log.loop_trace import init_agent_config
                         run_config = init_agent_config(graph, ctx)
                     else:
-                        from utils.log.loop_trace import init_run_config
                         run_config = init_run_config(graph, ctx)
 
                     run_config["recursion_limit"] = 100
@@ -188,14 +188,11 @@ class OpenAIChatHandler:
             """后台线程生产者"""
             try:
                 # 获取 graph 并配置
-                from utils.helper import graph_helper
                 graph = self.graph_service._get_graph(ctx)
 
                 if graph_helper.is_agent_proj():
-                    from utils.log.loop_trace import init_agent_config
                     run_config = init_agent_config(graph, ctx)
                 else:
-                    from utils.log.loop_trace import init_run_config
                     run_config = init_run_config(graph, ctx)
 
                 run_config["recursion_limit"] = 100
@@ -285,7 +282,6 @@ class OpenAIChatHandler:
         request_id: str,
     ) -> str:
         """创建错误 SSE chunk"""
-        import json
         error_data = {
             "id": request_id,
             "object": "chat.completion.chunk",
