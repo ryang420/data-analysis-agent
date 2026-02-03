@@ -32,6 +32,15 @@ def build_agent(ctx=None):
     with open(config_path, 'r', encoding='utf-8') as f:
         cfg = json.load(f)
 
+    # System prompt: prefer sp_file (readable .md) over inline sp (JSON string)
+    if cfg.get("sp_file"):
+        config_dir = os.path.dirname(config_path)
+        prompt_path = os.path.join(config_dir, cfg["sp_file"])
+        with open(prompt_path, 'r', encoding='utf-8') as f:
+            system_prompt = f.read().strip()
+    else:
+        system_prompt = cfg.get("sp")
+
     # Local: OPENAI_API_KEY / OPENAI_BASE_URL; platform: WORKLOAD_IDENTITY_API_KEY / INTEGRATION_MODEL_BASE_URL
     api_key = os.getenv("OPENAI_API_KEY") or os.getenv("WORKLOAD_IDENTITY_API_KEY")
     base_url = os.getenv("OPENAI_BASE_URL") or os.getenv("INTEGRATION_MODEL_BASE_URL") or None
@@ -53,7 +62,7 @@ def build_agent(ctx=None):
 
     return create_agent(
         model=llm,
-        system_prompt=cfg.get("sp"),
+        system_prompt=system_prompt,
         tools=[execute_sql_query, get_table_schema],
         checkpointer=get_memory_saver(),
         state_schema=AgentState,
