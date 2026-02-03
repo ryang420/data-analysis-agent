@@ -41,12 +41,13 @@ def build_agent(ctx=None):
     else:
         system_prompt = cfg.get("sp")
 
-    # Local: OPENAI_API_KEY / OPENAI_BASE_URL; platform: WORKLOAD_IDENTITY_API_KEY / INTEGRATION_MODEL_BASE_URL
+    # Local: OPENAI_API_KEY / OPENAI_BASE_URL / OPENAI_MODEL; platform: WORKLOAD_IDENTITY_API_KEY / INTEGRATION_MODEL_BASE_URL
     api_key = os.getenv("OPENAI_API_KEY") or os.getenv("WORKLOAD_IDENTITY_API_KEY")
     base_url = os.getenv("OPENAI_BASE_URL") or os.getenv("INTEGRATION_MODEL_BASE_URL") or None
+    model = os.getenv("OPENAI_MODEL") or cfg['config'].get("model")
 
     llm_kw: dict = {
-        "model": cfg['config'].get("model"),
+        "model": model,
         "api_key": api_key,
         "temperature": cfg['config'].get('temperature', 0.7),
         "streaming": True,
