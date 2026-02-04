@@ -3,8 +3,6 @@
 import asyncio
 import json
 import logging
-import threading
-import contextvars
 from typing import Dict, Any, Union, AsyncGenerator
 
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -80,7 +78,7 @@ class OpenAIChatHandler:
 
             # 4. 根据 stream 参数处理
             if request.stream:
-                return self._handle_stream(
+                return await self._handle_stream(
                     stream_input,
                     session_id,
                     response_converter,
@@ -98,71 +96,50 @@ class OpenAIChatHandler:
             logger.error(f"Error in OpenAIChatHandler.handle: {e}", exc_info=True)
             return self._handle_error(e)
 
-    def _handle_stream(
+    async def _handle_stream(
         self,
         stream_input: Dict[str, Any],
         session_id: str,
         response_converter: ResponseConverter,
         ctx: Context,
     ) -> StreamingResponse:
-        """流式响应处理"""
+        """流式响应处理 - 使用 graph.astream() 异步流"""
 
         async def stream_generator() -> AsyncGenerator[str, None]:
             """异步流式生成器"""
-            loop = asyncio.get_running_loop()
-            queue: asyncio.Queue = asyncio.Queue()
-            context = contextvars.copy_context()
-
-            def producer():
-                """后台线程生产者"""
-                try:
-                    # 获取 graph 并配置
-                    graph = self.graph_service._get_graph(ctx)
-
-                    if graph_helper.is_agent_proj():
-                        run_config = init_agent_config(graph, ctx)
-                    else:
-                        run_config = init_run_config(graph, ctx)
-
-                    run_config["recursion_limit"] = 100
-                    run_config["configurable"] = {"thread_id": session_id}
-
-                    # 流式执行 - 直接使用 LangGraph 原始流
-                    items = graph.stream(
-                        stream_input,
-                        stream_mode="messages",
-                        config=run_config,
-                        context=ctx,
-                    )
-
-                    # 使用 iter_langgraph_stream 方法，支持工具参数流式输出
-                    for sse_data in response_converter.iter_langgraph_stream(items):
-                        if sse_data != "data: [DONE]\n\n":  # 不在这里发送 DONE
-                            loop.call_soon_threadsafe(queue.put_nowait, sse_data)
-
-                except Exception as ex:
-                    logger.error(f"Stream producer error: {ex}", exc_info=True)
-                    err = classify_error(ex, {"node_name": "openai_stream"})
-                    error_chunk = self._create_error_sse_chunk(
-                        str(err.code),
-                        str(ex),
-                        response_converter.request_id,
-                    )
-                    loop.call_soon_threadsafe(queue.put_nowait, error_chunk)
-                finally:
-                    loop.call_soon_threadsafe(queue.put_nowait, "data: [DONE]\n\n")
-                    loop.call_soon_threadsafe(queue.put_nowait, None)
-
-            # 启动后台线程
-            threading.Thread(target=lambda: context.run(producer), daemon=True).start()
-
-            # 从队列消费
             try:
-                while True:
-                    item = await queue.get()
-                    if item is None:
-                        break
-                    yield item
+                graph = self.graph_service._get_graph(ctx)
+
+                if graph_helper.is_agent_proj():
+                    run_config = init_agent_config(graph, ctx)
+                else:
+                    run_config = init_run_config(graph, ctx)
+
+                run_config["recursion_limit"] = 100
+                run_config["configurable"] = {"thread_id": session_id}
+
+                items = graph.astream(
+                    stream_input,
+                    stream_mode="messages",
+                    config=run_config,
+                    context=ctx,
+                )
+
+                async for sse_data in response_converter.iter_langgraph_stream_async(
+                    items
+                ):
+                    yield sse_data
+
+            except Exception as ex:
+                logger.error(f"Stream producer error: {ex}", exc_info=True)
+                err = classify_error(ex, {"node_name": "openai_stream"})
+                error_chunk = self._create_error_sse_chunk(
+                    str(err.code),
+                    str(ex),
+                    response_converter.request_id,
+                )
+                yield error_chunk
+                yield "data: [DONE]\n\n"
             except asyncio.CancelledError:
                 logger.info(f"Stream cancelled for run_id: {ctx.run_id}")
                 raise
@@ -179,54 +156,35 @@ class OpenAIChatHandler:
         response_converter: ResponseConverter,
         ctx: Context,
     ) -> JSONResponse:
-        """非流式响应处理"""
-        loop = asyncio.get_running_loop()
-        context = contextvars.copy_context()
-        result_future: asyncio.Future = loop.create_future()
-
-        def producer():
-            """后台线程生产者"""
-            try:
-                # 获取 graph 并配置
-                graph = self.graph_service._get_graph(ctx)
-
-                if graph_helper.is_agent_proj():
-                    run_config = init_agent_config(graph, ctx)
-                else:
-                    run_config = init_run_config(graph, ctx)
-
-                run_config["recursion_limit"] = 100
-                run_config["configurable"] = {"thread_id": session_id}
-
-                # 流式执行 - 直接使用 LangGraph 原始流
-                items = graph.stream(
-                    stream_input,
-                    stream_mode="messages",
-                    config=run_config,
-                    context=ctx,
-                )
-
-                # 使用 collect_langgraph_to_response 方法收集结果
-                response = response_converter.collect_langgraph_to_response(items)
-                loop.call_soon_threadsafe(
-                    result_future.set_result,
-                    response.to_dict()
-                )
-
-            except Exception as ex:
-                logger.error(f"Non-stream producer error: {ex}", exc_info=True)
-                loop.call_soon_threadsafe(
-                    result_future.set_exception,
-                    ex
-                )
-
-        # 启动后台线程
-        threading.Thread(target=lambda: context.run(producer), daemon=True).start()
-
+        """非流式响应处理 - 使用 graph.astream() 异步流"""
         try:
-            result = await result_future
-            return JSONResponse(content=result)
+            graph = self.graph_service._get_graph(ctx)
+
+            if graph_helper.is_agent_proj():
+                run_config = init_agent_config(graph, ctx)
+            else:
+                run_config = init_run_config(graph, ctx)
+
+            run_config["recursion_limit"] = 100
+            run_config["configurable"] = {"thread_id": session_id}
+
+            items = graph.astream(
+                stream_input,
+                stream_mode="messages",
+                config=run_config,
+                context=ctx,
+            )
+
+            # 收集 astream 输出后转为同步迭代器供 collect 使用
+            collected: list = []
+            async for item in items:
+                collected.append(item)
+
+            response = response_converter.collect_langgraph_to_response(iter(collected))
+            return JSONResponse(content=response.to_dict())
+
         except Exception as e:
+            logger.error(f"Non-stream error: {e}", exc_info=True)
             return self._handle_error(e)
 
     def _handle_error(self, error: Exception) -> JSONResponse:

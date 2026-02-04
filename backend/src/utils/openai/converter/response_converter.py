@@ -2,7 +2,7 @@
 
 import json
 import time
-from typing import Iterator, Optional, List, Dict, Any
+from typing import Iterator, Optional, List, Dict, Any, AsyncIterator, AsyncGenerator
 
 from utils.openai.types.response import (
     ChatCompletionChunk,
@@ -98,6 +98,53 @@ class ResponseConverter:
                 sent_finish_reason = False
 
         # 流结束时，如果发送过 role 但没有发送过 finish_reason，发送 stop
+        if self._sent_role and not sent_finish_reason:
+            yield self._chunk_to_sse(self._create_chunk(Delta(), finish_reason="stop"))
+
+        yield "data: [DONE]\n\n"
+
+    async def iter_langgraph_stream_async(
+        self, items: AsyncIterator[Any]
+    ) -> AsyncGenerator[str, None]:
+        """
+        异步处理 LangGraph 原始流，实现工具参数的增量输出
+
+        Args:
+            items: graph.astream(stream_mode="messages") 返回的异步迭代器
+                   每个 item 是 (chunk, metadata) 元组
+
+        Yields:
+            SSE 格式字符串
+        """
+        sent_finish_reason = False
+
+        async for item in items:
+            try:
+                if isinstance(item, (list, tuple)) and len(item) >= 2:
+                    chunk, meta = item[0], item[1]
+                elif isinstance(item, (list, tuple)) and len(item) == 1:
+                    chunk, meta = item[0], {}
+                else:
+                    chunk, meta = item, {}
+            except (ValueError, TypeError):
+                chunk, meta = item, {}
+            chunk_type = chunk.__class__.__name__
+
+            if (meta or {}).get("langgraph_node") == "tools":
+                if chunk_type != "ToolMessage":
+                    continue
+
+            had_tool_calls_before = bool(self._current_tool_calls)
+
+            for sse_chunk in self._process_langgraph_chunk(chunk, meta):
+                yield sse_chunk
+
+            is_last = (meta or {}).get("chunk_position") == "last"
+            if chunk_type == "AIMessageChunk" and is_last and had_tool_calls_before:
+                sent_finish_reason = True
+            elif chunk_type == "ToolMessage":
+                sent_finish_reason = False
+
         if self._sent_role and not sent_finish_reason:
             yield self._chunk_to_sse(self._create_chunk(Delta(), finish_reason="stop"))
 
