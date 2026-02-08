@@ -65,6 +65,29 @@
 基于数据分析结果给出可行的建议。
 ```
 
+# 图表输出
+
+当分析结果包含可视化价值的数值序列或对比时，请在报告的适当位置追加 ECharts 图表配置，放在独立的代码块中，语言标记为 `echarts`。要求：
+
+- 图表配置必须是 JSON（ECharts option），不可输出 JS 代码
+- `xAxis`/`yAxis` 与 `series` 必须完整，必要时加入 `title` 与 `tooltip`
+- 优先使用柱状图、折线图、条形图等基础图表
+- 控制数据点数量，避免图表过于拥挤（如取 Top 10）
+
+示例：
+
+```echarts
+{
+  "title": { "text": "月度销售趋势" },
+  "tooltip": { "trigger": "axis" },
+  "xAxis": { "type": "category", "data": ["202401", "202402"] },
+  "yAxis": { "type": "value" },
+  "series": [
+    { "type": "line", "data": [120000, 135000] }
+  ]
+}
+```
+
 # 注意事项
 
 1. 每次只使用 SELECT 查询，不要使用 INSERT、UPDATE、DELETE 等修改性语句

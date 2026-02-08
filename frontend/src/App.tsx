@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, isValidElement } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import * as echarts from 'echarts'
 import './App.css'
 
 const API_BASE = import.meta.env.VITE_API_BASE || ''
@@ -25,6 +26,8 @@ function stripOuterMarkdownCodeBlock(text: string): string {
   if (!trimmed.startsWith('```')) return text
   const afterOpen = trimmed.slice(3).trimStart()
   const langMatch = afterOpen.match(/^(\w+)\s*\n/)
+  const lang = langMatch?.[1]?.toLowerCase()
+  if (lang && lang !== 'markdown' && lang !== 'md') return text
   const contentStart = langMatch ? langMatch[0].length : 0
   const inner = afterOpen.slice(contentStart)
   const closeIdx = inner.indexOf('\n```')
@@ -33,11 +36,85 @@ function stripOuterMarkdownCodeBlock(text: string): string {
   return text
 }
 
+function ChartBlock({ specText }: { specText: string }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!containerRef.current) return
+    let option: echarts.EChartsOption
+    try {
+      option = JSON.parse(specText) as echarts.EChartsOption
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'JSON 解析失败'
+      setError(msg)
+      return
+    }
+
+    setError(null)
+    containerRef.current.innerHTML = ''
+    const chart = echarts.init(containerRef.current, undefined, { renderer: 'canvas' })
+    try {
+      chart.setOption(option, { notMerge: true })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : '图表渲染失败'
+      setError(msg)
+    }
+
+    const handleResize = () => chart.resize()
+    window.addEventListener('resize', handleResize)
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      chart.dispose()
+    }
+  }, [specText])
+
+  return (
+    <div className="chart-block">
+      <div className="chart-canvas" ref={containerRef} />
+      {error && (
+        <div className="chart-error">
+          图表渲染失败：{error}
+          <pre className="chart-fallback">
+            <code>{specText}</code>
+          </pre>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function MarkdownContent({ text }: { text: string }) {
   const content = stripOuterMarkdownCodeBlock(text)
   return (
     <div className="message-content-inner">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          pre({ children, node, ...props }) {
+            const child = Array.isArray(children) ? children[0] : children
+            if (isValidElement(child) && child.type === ChartBlock) {
+              return <div {...props}>{child}</div>
+            }
+            return <pre {...props}>{children}</pre>
+          },
+          code({ inline, className, children, node, ...props }) {
+            const match = /language-(\w+)/.exec(className || '')
+            const lang = match?.[1]?.toLowerCase()
+            const codeText = String(children).replace(/\n$/, '')
+            if (!inline && (lang === 'echarts' || lang === 'chart')) {
+              return <ChartBlock specText={codeText} />
+            }
+            return (
+              <code className={className} {...props}>
+                {children}
+              </code>
+            )
+          },
+        }}
+      >
+        {content}
+      </ReactMarkdown>
     </div>
   )
 }
