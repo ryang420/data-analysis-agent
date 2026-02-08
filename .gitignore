@@ -12,3 +12,4 @@ __pycache__/
 *.egg-info/
 /.env
 .env
+backend/.venv
