@@ -20,12 +20,15 @@ The agent uses LLM tool-calling to execute SQL queries against a PostgreSQL data
 
 ### Database Setup (one-time)
 
-If the database has not been initialized yet:
+If the database has not been initialized yet, create the PostgreSQL user and database to match `PGDATABASE_URL`, then create the table and import data:
 
 ```bash
-sudo -u postgres psql -c "CREATE USER devuser WITH PASSWORD 'devpass' CREATEDB;"
-sudo -u postgres psql -c "CREATE DATABASE salesdb OWNER devuser;"
-# Set PGDATABASE_URL to your local PostgreSQL connection string
+# Parse user/password/db from the PGDATABASE_URL secret and create them locally
+PG_USER=$(echo "$PGDATABASE_URL" | sed -n 's|postgresql://\([^:]*\):.*|\1|p')
+PG_PASS=$(echo "$PGDATABASE_URL" | sed -n 's|postgresql://[^:]*:\([^@]*\)@.*|\1|p')
+PG_DB=$(echo "$PGDATABASE_URL" | sed -n 's|.*/\([^?]*\).*|\1|p')
+sudo -u postgres psql -c "CREATE USER $PG_USER WITH PASSWORD '$PG_PASS' CREATEDB SUPERUSER;"
+sudo -u postgres psql -c "CREATE DATABASE $PG_DB OWNER $PG_USER;"
 psql "$PGDATABASE_URL" -f backend/scripts/create_sales_data_table.sql
 PYTHONPATH=backend/src python3 backend/scripts/import_csv_to_db.py
 ```
