@@ -42,11 +42,11 @@ See `README.md` for standard commands. Key notes:
 
 - **Backend lint**: `cd backend && PYTHONPATH=src pylint src/ --rcfile /workspace/.pylintrc`
 - **Frontend type check**: `cd frontend && npx tsc --noEmit`
-- **Frontend lint**: `cd frontend && npx eslint .` (requires `eslint.config.js` which is currently missing from the repo)
+- **Frontend lint**: `cd frontend && npx eslint .`
 - **Backend tests**: `cd backend && PYTHONPATH=src pytest` (no test files currently in the repo)
 
 ### Gotchas
 
 - The `/v1/chat/completions` endpoint requires a `session_id` field in the request body (non-standard OpenAI extension).
 - The `.pylintrc` at repo root sets `init-hook` to add `src` to `sys.path`.
-- The frontend `eslint.config.js` file is missing; ESLint v9 will fail without it. TypeScript checking via `tsc --noEmit` works as an alternative.
+- Frontend TypeScript checking via `tsc --noEmit` is a useful complement to ESLint.
